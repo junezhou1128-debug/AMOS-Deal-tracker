@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>投放台 — 秒杀排期 & 控价追踪</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#131a24; --panel-2:#182130; --line:#253145;
+    --ink:#e7ecf4; --ink-dim:#8a97ab; --ink-faint:#57647a;
+    --danger:#ff5d5d; --danger-dim:#3a1f22;
+    --ok:#3ddc97; --ok-dim:#16302a;
+    --warn:#ffb454; --warn-dim:#382b16;
+    --info:#58a6ff; --info-dim:#17263d;
+    --deal:#c792ea; --deal-dim:#2a2038;
+    --mono:'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans:'Space Grotesk','PingFang SC','Microsoft YaHei', sans-serif;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
+  .wrap{ max-width:1320px; margin:0 auto; padding:28px 20px 90px; }
+
+  header.top{ display:flex; align-items:flex-end; justify-content:space-between; border-bottom:1px solid var(--line); padding-bottom:18px; margin-bottom:22px; flex-wrap:wrap; gap:12px;}
+  .brand{ display:flex; align-items:baseline; gap:10px; }
+  .brand .mark{ font-family:var(--mono); font-size:12px; letter-spacing:.12em; color:var(--deal); border:1px solid var(--deal); padding:2px 6px; border-radius:3px;}
+  .brand h1{ font-size:20px; margin:0; font-weight:600; letter-spacing:-.01em; }
+  .brand .sub{ font-family:var(--mono); font-size:12px; color:var(--ink-faint); margin-left:4px;}
+  .clock{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); }
+
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-top:18px; }
+  .panel h3{ margin:0 0 4px; font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-dim); font-weight:600;}
+  .panel .sub-desc{ font-size:12px; color:var(--ink-faint); margin:0 0 14px; line-height:1.6; }
+
+  .rule-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+  .rule-card{ border:1px solid var(--line); border-radius:8px; padding:14px 16px; background:var(--panel-2); }
+  .rule-card .rhead{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .rule-card .rhead b{ font-size:13px; }
+  .rule-card .ctrl{ margin-bottom:8px; }
+  .rule-card label{ display:block; font-size:11.5px; color:var(--ink-dim); margin-bottom:4px; }
+  .rule-card .value{ font-family:var(--mono); color:var(--ink); font-weight:600; }
+  input[type=range]{ width:100%; accent-color:var(--deal); }
+  input[type=checkbox]{ accent-color:var(--deal); width:15px; height:15px; }
+  .switch{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-dim); }
+
+  .site-rules{ margin-top:16px; }
+  table.sitecfg{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.sitecfg th{ text-align:left; font-family:var(--mono); font-size:11px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.05em; padding:6px 10px; border-bottom:1px solid var(--line); }
+  table.sitecfg td{ padding:7px 10px; border-bottom:1px solid #1b2434; }
+  table.sitecfg td.chk{ text-align:center; }
+  table.sitecfg input[type=text]{ background:var(--bg); border:1px solid var(--line); color:var(--ink); padding:5px 8px; border-radius:5px; font-family:var(--mono); font-size:12px; width:90px; }
+
+  .actionbar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+  button{ font-family:var(--mono); font-size:12px; background:var(--panel-2); color:var(--ink); border:1px solid var(--line); padding:8px 13px; border-radius:6px; cursor:pointer; }
+  button:hover{ border-color:var(--ink-dim); }
+  button.primary{ border-color:var(--deal); color:var(--deal); }
+  button.ghost{ background:transparent; }
+  input[type=file]{ display:none; }
+
+  table.data{ width:100%; border-collapse:collapse; font-size:12px; }
+  table.data thead th{ text-align:left; font-family:var(--mono); font-weight:500; color:var(--ink-faint); font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid var(--line); padding:7px 8px; white-space:nowrap; position:sticky; top:0; background:var(--panel);}
+  table.data tbody td{ padding:6px 8px; border-bottom:1px solid #1b2434; vertical-align:middle; white-space:nowrap; }
+  table.data tbody tr:hover{ background:var(--panel-2); }
+  table.data input, table.data select{ background:var(--bg); border:1px solid var(--line); color:var(--ink); padding:5px 6px; border-radius:5px; font-family:var(--mono); font-size:11.5px; }
+  table.data input[type=text]{ width:100px; }
+  table.data input[type=number]{ width:80px; }
+  table.data input[type=date]{ width:130px; }
+  td.num{ text-align:right; font-family:var(--mono); }
+  td.calc{ font-family:var(--mono); font-size:11px; color:var(--ink-dim); }
+  td.del{ text-align:center; }
+  td.del button{ padding:4px 8px; color:var(--danger); border-color:var(--danger-dim); }
+  .tablewrap{ max-height:560px; overflow:auto; border:1px solid var(--line); border-radius:8px; }
+  .empty{ text-align:center; padding:50px 0; color:var(--ink-faint); font-family:var(--mono); font-size:12px; }
+
+  .pill{ font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:20px; display:inline-block; white-space:nowrap; }
+  .pill.ok{ background:var(--ok-dim); color:var(--ok); }
+  .pill.warn{ background:var(--warn-dim); color:var(--warn); }
+  .pill.danger{ background:var(--danger-dim); color:var(--danger); }
+  .pill.info{ background:var(--info-dim); color:var(--info); }
+  .pill.muted{ background:var(--panel-2); color:var(--ink-faint); border:1px solid var(--line); }
+
+  .conflictbox{ margin-top:16px; }
+  .conflict-item{ border:1px solid var(--danger-dim); background:var(--danger-dim); border-radius:8px; padding:12px 14px; margin-bottom:10px; font-size:12.5px; line-height:1.6; }
+  .conflict-item b{ color:var(--danger); }
+
+  /* timeline */
+  .timeline-wrap{ margin-top:16px; overflow-x:auto; }
+  .tl-group{ margin-bottom:22px; }
+  .tl-label{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); margin-bottom:6px; }
+  .tl-label b{ color:var(--ink); }
+  .tl-row{ position:relative; height:34px; background:var(--panel-2); border-radius:6px; margin-bottom:6px; min-width:100%; }
+  .tl-bar{ position:absolute; top:5px; height:24px; border-radius:4px; font-family:var(--mono); font-size:10px; color:#08110d; display:flex; align-items:center; padding:0 6px; overflow:hidden; white-space:nowrap; background:var(--deal); }
+  .tl-control{ position:absolute; top:5px; height:24px; border-radius:4px; background:repeating-linear-gradient(45deg, rgba(255,180,84,.28), rgba(255,180,84,.28) 5px, rgba(255,180,84,.12) 5px, rgba(255,180,84,.12) 10px); border:1px dashed var(--warn); }
+  .tl-axis{ font-family:var(--mono); font-size:10px; color:var(--ink-faint); display:flex; justify-content:space-between; margin-top:2px; }
+  .tl-legend{ display:flex; gap:18px; font-family:var(--mono); font-size:11px; color:var(--ink-dim); margin-bottom:12px; }
+  .tl-legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .tl-legend i{ width:12px; height:12px; border-radius:3px; display:inline-block; }
+
+  .diag-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .diag-card{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; }
+  .diag-card .n{ font-family:var(--mono); font-size:24px; font-weight:600; }
+  .diag-card .lbl{ font-size:12px; color:var(--ink-dim); margin-top:6px; }
+  .diag-card.warn .n{ color:var(--danger); }
+
+  .disclaimer{ font-size:12px; color:var(--ink-dim); line-height:1.8; background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-top:16px; }
+  .disclaimer b{ color:var(--warn); }
+
+  .hidden{ display:none !important; }
+  footer{ margin-top:40px; text-align:center; color:var(--ink-faint); font-size:11px; font-family:var(--mono); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <span class="mark">STC</span>
+      <h1>秒杀排期 &amp; 控价追踪台</h1>
+      <span class="sub">deal-schedule-console / v1</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <span class="pill muted" id="cloudStatus">检测云端配置中…</span>
+      <div class="clock" id="clock"></div>
+    </div>
+  </header>
+
+  <div class="disclaimer">
+    <b>先说明：</b>亚马逊参考价 / Was Price / 秒杀折扣规则 2026 年多次调整（4月23日的 List Price 验证新规、5月18日的 90 天累计促销天数重算规则等），且不同站点、不同品类的具体口径并不完全统一，官方也未完全公开算法细节。下面的规则参数<b>都可以自由调整</b>，默认值是根据目前公开的政策趋势和卖家社区实践经验设置的参考值，<b>不是亚马逊官方承诺的固定规则</b>——正式操作前请以 Seller Central 后台实际提示、以及你自己账号的历史经验为准。
+  </div>
+
+  <div class="panel">
+    <h3>控价规则配置</h3>
+    <p class="sub-desc">三条规则可以分别开关、分别调整参数；每个站点默认适用哪些规则可以在下方"站点规则"里单独配置。</p>
+    <div class="rule-grid">
+      <div class="rule-card">
+        <div class="rhead"><b>规则一 · 近N天最低价折扣</b><label class="switch"><input type="checkbox" id="r30-on" checked> 启用</label></div>
+        <div class="ctrl"><label>回看天数 <span class="value" id="v-r30-days">30</span> 天</label><input type="range" id="r30-days" min="7" max="60" step="1" value="30"></div>
+        <div class="ctrl"><label>最低折扣要求 <span class="value" id="v-r30-pct">5%</span></label><input type="range" id="r30-pct" min="0" max="20" step="1" value="5"></div>
+        <div class="sub-desc" style="margin:0;">下次提报价必须比该窗口内最低成交价（含上次秒杀价）再低这个百分比，否则会被要求继续压价——这就是"叠加"的来源。等窗口滚动过去，最低价回到日常价，就不用继续叠加。</div>
+      </div>
+      <div class="rule-card">
+        <div class="rhead"><b>规则二 · 近N天最低价封顶（美加系大促）</b><label class="switch"><input type="checkbox" id="r60-on" checked> 启用</label></div>
+        <div class="ctrl"><label>回看天数 <span class="value" id="v-r60-days">60</span> 天</label><input type="range" id="r60-days" min="30" max="90" step="1" value="60"></div>
+        <div class="sub-desc" style="margin:0;">活动价不能高于该窗口内的历史最低成交价，主要用于美国 / 加拿大站的大促（如 Prime Day）资质判断。</div>
+      </div>
+      <div class="rule-card">
+        <div class="rhead"><b>规则三 · 90天促销天数占比（参考价重算）</b><label class="switch"><input type="checkbox" id="r90-on" checked> 启用</label></div>
+        <div class="ctrl"><label>滚动窗口 <span class="value" id="v-r90-window">90</span> 天</label><input type="range" id="r90-window" min="60" max="120" step="5" value="90"></div>
+        <div class="ctrl"><label>促销天数占比阈值 <span class="value" id="v-r90-pct">50%</span></label><input type="range" id="r90-pct" min="20" max="80" step="5" value="50"></div>
+        <div class="sub-desc" style="margin:0;">窗口内促销天数占比超过阈值，亚马逊会把促销价一并计入 Typical Price 计算，日常参考价可能被永久拉低。这是比"叠加"更长期的风险，跨活动累计计算。</div>
+      </div>
+    </div>
+
+    <div class="site-rules">
+      <h3 style="margin-top:18px;">站点规则适用</h3>
+      <p class="sub-desc">根据数据里出现的站点自动列出，可按需勾选每个站点适用哪些规则。</p>
+      <div class="tablewrap" style="max-height:260px;">
+        <table class="sitecfg" id="siteRuleTable"><thead><tr><th>站点</th><th class="chk">规则一</th><th class="chk">规则二</th><th class="chk">规则三</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>活动排期</h3>
+    <p class="sub-desc">直接在表格里添加/编辑活动，也可以批量导入现成的排期表（CSV / xlsx）。</p>
+    <div class="actionbar">
+      <button class="primary" id="addRowBtn">+ 添加一场活动</button>
+      <button id="importBtn">批量导入表格</button>
+      <input type="file" id="importInput" accept=".csv,.xlsx,.xls">
+      <button id="exportBtn">导出完整排期（含计算结果）</button>
+      <button class="ghost" id="clearBtn">清空全部</button>
+      <span style="font-family:var(--mono); font-size:11px; color:var(--ink-faint); margin-left:auto;" id="importStatus"></span>
+    </div>
+    <div class="tablewrap">
+      <table class="data" id="activityTable">
+        <thead><tr>
+          <th>站点</th><th>SKU / ASIN</th><th>活动类型</th><th>开始日期</th><th>结束日期</th><th>活动价</th><th>参考价</th>
+          <th>时长</th><th>状态</th><th>控价至</th><th>可再提报（不叠加）</th><th>90天占比风险</th><th>备注</th><th></th>
+        </tr></thead>
+        <tbody id="activityBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel hidden" id="diagPanel">
+    <h3>账户总览</h3>
+    <div class="diag-grid">
+      <div class="diag-card"><div class="n" id="g-total">0</div><div class="lbl">已录入活动场次</div></div>
+      <div class="diag-card"><div class="n" id="g-sites">0</div><div class="lbl">涉及站点数</div></div>
+      <div class="diag-card"><div class="n" id="g-skus">0</div><div class="lbl">涉及 SKU 数</div></div>
+      <div class="diag-card warn"><div class="n" id="g-conflicts">0</div><div class="lbl">潜在叠加/排期冲突</div></div>
+    </div>
+    <div class="conflictbox" id="conflictBox"></div>
+  </div>
+
+  <div class="panel hidden" id="timelinePanel">
+    <h3>排期时间轴</h3>
+    <p class="sub-desc">紫色为活动本身，斜纹橙色为活动结束后的控价管控期；管控期结束的下一天即为"可再提报不叠加"日期。</p>
+    <div class="tl-legend">
+      <span><i style="background:var(--deal);"></i>秒杀 / 活动区间</span>
+      <span><i style="background:repeating-linear-gradient(45deg, var(--warn), var(--warn) 3px, transparent 3px, transparent 6px);"></i>控价管控期</span>
+    </div>
+    <div class="timeline-wrap" id="timelineWrap"></div>
+  </div>
+
+  <footer>数据仅在本地浏览器中处理，不会上传到任何服务器。控价日期为基于可配置规则的估算，请结合后台实际提报结果确认。</footer>
+</div>
+
+<script>
+function tickClock(){ document.getElementById('clock').textContent = new Date().toLocaleString('zh-CN',{hour12:false}); }
+tickClock(); setInterval(tickClock,1000);
+
+/* ============== date utils (UTC-safe) ============== */
+function parseDate(s){
+  if(!s) return null;
+  const parts = String(s).split(/[-\/]/).map(x=>parseInt(x,10));
+  if(parts.length<3 || parts.some(isNaN)) return null;
+  return new Date(Date.UTC(parts[0], parts[1]-1, parts[2]));
+}
+function fmtDate(d){
+  if(!d) return '';
+  return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+}
+function addDays(d, n){ return new Date(d.getTime() + n*86400000); }
+function diffDays(a,b){ return Math.round((b.getTime()-a.getTime())/86400000); }
+function today(){ const n=new Date(); return new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())); }
+
+/* ============== Supabase cloud sync ==============
+   把下面两行换成你自己 Supabase 项目的值（Project Settings -> API 里能找到）：
+   1. SUPABASE_URL：形如 https://xxxxxxxx.supabase.co
+   2. SUPABASE_ANON_KEY：anon public 那一串
+   没配置之前（还是下面的占位符），工具照常可用，但只在你自己浏览器里保存数据，不联网、不共享。
+*/
+const SUPABASE_URL = 'https://amosdealscheduletracker.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_7G5s0PF08oUUx2il0J1EkQ_KLnEKuft';
+const CLOUD_ON = SUPABASE_URL.startsWith('https://') && SUPABASE_ANON_KEY.length>20;
+const sb = CLOUD_ON ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+function setCloudStatus(text, cls){
+  const el = document.getElementById('cloudStatus');
+  el.textContent = text;
+  el.className = 'pill '+cls;
+}
+
+// local field name -> supabase column name
+const DB_COLS = {site:'site', sku:'sku', type:'type', startStr:'start_str', endStr:'end_str', price:'price', refPrice:'ref_price', note:'note'};
+function toDbRow(a){
+  const row = {};
+  Object.keys(DB_COLS).forEach(k=> row[DB_COLS[k]] = (a[k]===undefined?null:a[k]));
+  return row;
+}
+function fromDbRow(r){
+  const a = {id:r.id};
+  Object.keys(DB_COLS).forEach(k=> a[k] = r[DB_COLS[k]]);
+  return a;
+}
+
+async function cloudLoadAll(){
+  if(!CLOUD_ON) return null;
+  const {data, error} = await sb.from('deal_activities').select('*').order('id');
+  if(error){ setCloudStatus('云端连接失败：'+error.message, 'danger'); return null; }
+  return data.map(fromDbRow);
+}
+async function cloudInsert(activity){
+  if(!CLOUD_ON) return null;
+  const {data, error} = await sb.from('deal_activities').insert(toDbRow(activity)).select().single();
+  if(error){ setCloudStatus('保存失败：'+error.message, 'danger'); return null; }
+  return data.id;
+}
+async function cloudInsertMany(activities){
+  if(!CLOUD_ON || activities.length===0) return;
+  const {error} = await sb.from('deal_activities').insert(activities.map(toDbRow));
+  if(error) setCloudStatus('批量保存失败：'+error.message, 'danger');
+}
+async function cloudUpdateField(id, field, value){
+  if(!CLOUD_ON) return;
+  const col = DB_COLS[field];
+  if(!col) return;
+  const {error} = await sb.from('deal_activities').update({[col]:value}).eq('id', id);
+  if(error) setCloudStatus('同步失败：'+error.message, 'danger');
+}
+async function cloudDelete(id){
+  if(!CLOUD_ON) return;
+  const {error} = await sb.from('deal_activities').delete().eq('id', id);
+  if(error) setCloudStatus('删除同步失败：'+error.message, 'danger');
+}
+let suppressRealtimeReload = false;
+function subscribeRealtime(){
+  if(!CLOUD_ON) return;
+  sb.channel('deal_activities_changes')
+    .on('postgres_changes', {event:'*', schema:'public', table:'deal_activities'}, ()=>{
+      if(suppressRealtimeReload) return;
+      reloadFromCloud();
+    })
+    .subscribe();
+}
+async function reloadFromCloud(){
+  const rows = await cloudLoadAll();
+  if(rows){
+    ACTIVITIES = rows;
+    setCloudStatus('云端已连接 · 多人共享中', 'ok');
+    recompute();
+  }
+}
+
+/* ============== state ============== */
+let ACTIVITIES = []; // {id, site, sku, type, start, end, price, refPrice, note}
+let uidCounter = 1;
+let SITE_RULES = {}; // site -> {r30:bool, r60:bool, r90:bool}
+
+const DEFAULT_SITE_PRESET = (site)=>{
+  const s = (site||'').toUpperCase();
+  const isNA = /US|USA|CA|CANADA|美国|加拿大/.test(s);
+  return {r30:true, r60:isNA, r90:true};
+};
+
+function ensureSiteRule(site){
+  if(!SITE_RULES[site]) SITE_RULES[site] = DEFAULT_SITE_PRESET(site);
+}
+
+/* ============== rule config ============== */
+function getRuleConfig(){
+  return {
+    r30: {on: document.getElementById('r30-on').checked, days: parseInt(document.getElementById('r30-days').value,10), pct: parseInt(document.getElementById('r30-pct').value,10)},
+    r60: {on: document.getElementById('r60-on').checked, days: parseInt(document.getElementById('r60-days').value,10)},
+    r90: {on: document.getElementById('r90-on').checked, window: parseInt(document.getElementById('r90-window').value,10), pct: parseInt(document.getElementById('r90-pct').value,10)}
+  };
+}
+['r30-days','r30-pct','r60-days','r90-window','r90-pct'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', ()=>{
+    const el = document.getElementById(id);
+    const suffix = id.includes('pct') ? '%' : '';
+    document.getElementById('v-'+id).textContent = el.value + suffix;
+    recompute();
+  });
+});
+['r30-on','r60-on','r90-on'].forEach(id=> document.getElementById(id).addEventListener('change', recompute));
+
+/* ============== 90-day rolling threshold finder ============== */
+function findClearDateFor90(group, dealEnd, cfg){
+  // returns {sumAtEnd, clearDate, triggered}
+  const windowDays = cfg.r90.window;
+  const thresholdDays = Math.ceil(windowDays * cfg.r90.pct/100);
+  function sumAt(day){
+    const winStart = addDays(day, -(windowDays-1));
+    let sum = 0;
+    group.forEach(a=>{
+      if(!a.start || !a.end) return;
+      const s = a.start < winStart ? winStart : a.start;
+      const e = a.end > day ? day : a.end;
+      if(e >= s) sum += diffDays(s,e)+1;
+    });
+    return sum;
+  }
+  const sumAtEnd = sumAt(dealEnd);
+  const triggered = sumAtEnd >= thresholdDays;
+  if(!triggered) return {sumAtEnd, thresholdDays, triggered:false, clearDate:null};
+  let clearDate = null;
+  for(let i=1;i<=windowDays+10;i++){
+    const day = addDays(dealEnd, i);
+    if(sumAt(day) < thresholdDays){ clearDate = day; break; }
+  }
+  return {sumAtEnd, thresholdDays, triggered:true, clearDate};
+}
+
+/* ============== derive computed fields ============== */
+function computeAll(){
+  const cfg = getRuleConfig();
+  const t = today();
+  const grouped = {};
+  ACTIVITIES.forEach(a=>{
+    a.start = parseDate(a.startStr);
+    a.end = parseDate(a.endStr);
+    const key = (a.site||'')+'|'+(a.sku||'');
+    if(!grouped[key]) grouped[key] = [];
+    grouped[key].push(a);
+  });
+
+  ACTIVITIES.forEach(a=>{
+    a.duration = (a.start && a.end) ? diffDays(a.start,a.end)+1 : null;
+    if(a.start && t < a.start) a.status = '未开始';
+    else if(a.end && t > a.end) a.status = '已结束';
+    else if(a.start && a.end) a.status = '进行中';
+    else a.status = '—';
+
+    ensureSiteRule(a.site);
+    const rules = SITE_RULES[a.site];
+
+    let clearDates = [];
+    let note90 = null;
+    if(a.end){
+      if(cfg.r30.on && rules.r30) clearDates.push(addDays(a.end, cfg.r30.days));
+      if(cfg.r60.on && rules.r60) clearDates.push(addDays(a.end, cfg.r60.days));
+      if(cfg.r90.on && rules.r90){
+        const key = (a.site||'')+'|'+(a.sku||'');
+        const res = findClearDateFor90(grouped[key], a.end, cfg);
+        a.risk90 = res;
+        if(res.triggered && res.clearDate) clearDates.push(res.clearDate);
+      } else {
+        a.risk90 = null;
+      }
+    }
+    a.controlUntil = clearDates.length ? new Date(Math.max(...clearDates.map(d=>d.getTime()))) : (a.end || null);
+    a.nextEligible = a.controlUntil ? addDays(a.controlUntil,1) : null;
+  });
+}
+
+/* ============== conflict detection ============== */
+function detectConflicts(){
+  const conflicts = [];
+  const grouped = {};
+  ACTIVITIES.forEach(a=>{
+    const key = (a.site||'')+'|'+(a.sku||'');
+    if(!grouped[key]) grouped[key] = [];
+    grouped[key].push(a);
+  });
+  Object.values(grouped).forEach(list=>{
+    const sorted = list.filter(a=>a.start && a.end).sort((x,y)=>x.start-y.start);
+    for(let i=0;i<sorted.length;i++){
+      for(let j=i+1;j<sorted.length;j++){
+        const a = sorted[i], b = sorted[j];
+        if(b.start <= a.end){
+          conflicts.push({a,b,type:'overlap'});
+        } else if(a.nextEligible && b.start < a.nextEligible){
+          conflicts.push({a,b,type:'stack'});
+        }
+      }
+    }
+  });
+  return conflicts;
+}
+
+/* ============== rendering ============== */
+function renderSiteRuleTable(){
+  const sites = Array.from(new Set(ACTIVITIES.map(a=>a.site).filter(Boolean)));
+  sites.forEach(ensureSiteRule);
+  const tbody = document.querySelector('#siteRuleTable tbody');
+  tbody.innerHTML = sites.map(site=>{
+    const r = SITE_RULES[site];
+    return `<tr>
+      <td>${site}</td>
+      <td class="chk"><input type="checkbox" data-site="${site}" data-rule="r30" ${r.r30?'checked':''}></td>
+      <td class="chk"><input type="checkbox" data-site="${site}" data-rule="r60" ${r.r60?'checked':''}></td>
+      <td class="chk"><input type="checkbox" data-site="${site}" data-rule="r90" ${r.r90?'checked':''}></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="4" class="empty" style="padding:16px;">暂无站点，先添加活动</td></tr>`;
+  tbody.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      SITE_RULES[cb.dataset.site][cb.dataset.rule] = cb.checked;
+      recompute();
+    });
+  });
+}
+
+function pillForRisk90(a){
+  if(!a.risk90) return '<span class="pill muted">未启用</span>';
+  if(!a.risk90.triggered) return `<span class="pill ok">${a.risk90.sumAtEnd}/${a.risk90.thresholdDays}天 安全</span>`;
+  return `<span class="pill danger">${a.risk90.sumAtEnd}/${a.risk90.thresholdDays}天 ⚠触发</span>`;
+}
+function pillForStatus(s){
+  const cls = s==='进行中' ? 'info' : (s==='未开始' ? 'warn' : 'muted');
+  return `<span class="pill ${cls}">${s}</span>`;
+}
+
+function renderTable(){
+  const tbody = document.getElementById('activityBody');
+  if(ACTIVITIES.length===0){
+    tbody.innerHTML = `<tr><td colspan="14"><div class="empty">还没有活动，点上面"添加一场活动"或导入表格</div></td></tr>`;
+    return;
+  }
+  const typeOptions = ['秒杀 Lightning Deal','优惠券 Coupon','限时优惠 PED','站内大促','其他'];
+  tbody.innerHTML = ACTIVITIES.map(a=>{
+    return `<tr data-id="${a.id}">
+      <td><input type="text" data-f="site" value="${a.site||''}" placeholder="US/UK/DE.."></td>
+      <td><input type="text" data-f="sku" value="${a.sku||''}" placeholder="ASIN/SKU"></td>
+      <td><select data-f="type">${typeOptions.map(o=>`<option ${a.type===o?'selected':''}>${o}</option>`).join('')}</select></td>
+      <td><input type="date" data-f="startStr" value="${a.startStr||''}"></td>
+      <td><input type="date" data-f="endStr" value="${a.endStr||''}"></td>
+      <td><input type="number" step="0.01" data-f="price" value="${a.price===undefined||a.price===null?'':a.price}"></td>
+      <td><input type="number" step="0.01" data-f="refPrice" value="${a.refPrice===undefined||a.refPrice===null?'':a.refPrice}"></td>
+      <td class="calc">${a.duration!==null?a.duration+'天':'—'}</td>
+      <td class="calc">${pillForStatus(a.status)}</td>
+      <td class="calc">${a.controlUntil?fmtDate(a.controlUntil):'—'}</td>
+      <td class="calc">${a.nextEligible?fmtDate(a.nextEligible):'—'}</td>
+      <td class="calc">${pillForRisk90(a)}</td>
+      <td><input type="text" data-f="note" value="${a.note||''}" placeholder="备注" style="width:120px;"></td>
+      <td class="del"><button data-del="${a.id}">删</button></td>
+    </tr>`;
+  }).join('');
+
+  tbody.querySelectorAll('input,select').forEach(el=>{
+    el.addEventListener('change', e=>{
+      const tr = e.target.closest('tr');
+      const id = parseInt(tr.dataset.id,10);
+      const act = ACTIVITIES.find(a=>a.id===id);
+      if(act){
+        act[e.target.dataset.f] = e.target.value;
+        suppressRealtimeReload = true;
+        cloudUpdateField(id, e.target.dataset.f, e.target.value).finally(()=> suppressRealtimeReload=false);
+      }
+      recompute();
+    });
+  });
+  tbody.querySelectorAll('button[data-del]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = parseInt(btn.dataset.del,10);
+      ACTIVITIES = ACTIVITIES.filter(a=>a.id!==id);
+      suppressRealtimeReload = true;
+      cloudDelete(id).finally(()=> suppressRealtimeReload=false);
+      recompute();
+    });
+  });
+}
+
+function renderDiagAndConflicts(){
+  const panel = document.getElementById('diagPanel');
+  if(ACTIVITIES.length===0){ panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+  document.getElementById('g-total').textContent = ACTIVITIES.length;
+  document.getElementById('g-sites').textContent = new Set(ACTIVITIES.map(a=>a.site).filter(Boolean)).size;
+  document.getElementById('g-skus').textContent = new Set(ACTIVITIES.map(a=>a.sku).filter(Boolean)).size;
+
+  const conflicts = detectConflicts();
+  document.getElementById('g-conflicts').textContent = conflicts.length;
+  const box = document.getElementById('conflictBox');
+  if(conflicts.length===0){
+    box.innerHTML = `<p class="sub-desc" style="margin:0;">当前排期没有检测到重叠或叠加冲突。</p>`;
+  } else {
+    box.innerHTML = conflicts.map(c=>{
+      if(c.type==='overlap'){
+        return `<div class="conflict-item"><b>时间重叠</b> — ${c.a.site} / ${c.a.sku}：${fmtDate(c.a.start)}~${fmtDate(c.a.end)} 与 ${fmtDate(c.b.start)}~${fmtDate(c.b.end)} 两场活动时间有重叠，请检查排期。</div>`;
+      }
+      return `<div class="conflict-item"><b>可能触发叠加</b> — ${c.a.site} / ${c.a.sku}：上一场活动（${fmtDate(c.a.start)}~${fmtDate(c.a.end)}）建议控价到 ${fmtDate(c.a.controlUntil)}，可再提报日期是 ${fmtDate(c.a.nextEligible)}；但下一场活动排在了 ${fmtDate(c.b.start)}，早于这个日期，价格很可能会被要求继续下压。</div>`;
+    }).join('');
+  }
+}
+
+function renderTimeline(){
+  const panel = document.getElementById('timelinePanel');
+  const validActs = ACTIVITIES.filter(a=>a.start && a.end);
+  if(validActs.length===0){ panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+
+  const grouped = {};
+  validActs.forEach(a=>{
+    const key = (a.site||'—')+' / '+(a.sku||'—');
+    if(!grouped[key]) grouped[key] = [];
+    grouped[key].push(a);
+  });
+
+  let minDate = validActs[0].start, maxDate = validActs[0].controlUntil || validActs[0].end;
+  validActs.forEach(a=>{
+    if(a.start < minDate) minDate = a.start;
+    const end = a.controlUntil || a.end;
+    if(end > maxDate) maxDate = end;
+  });
+  minDate = addDays(minDate,-3); maxDate = addDays(maxDate,5);
+  const totalDays = Math.max(1, diffDays(minDate,maxDate));
+  const pxPerDay = Math.max(4, Math.min(14, Math.floor(1100/totalDays)));
+  const totalWidth = totalDays*pxPerDay;
+
+  function xFor(d){ return diffDays(minDate,d)*pxPerDay; }
+
+  const wrap = document.getElementById('timelineWrap');
+  wrap.innerHTML = Object.keys(grouped).map(key=>{
+    const list = grouped[key];
+    const bars = list.map(a=>{
+      const x1 = xFor(a.start), x2 = xFor(a.end);
+      const dealBar = `<div class="tl-bar" style="left:${x1}px; width:${Math.max(4,x2-x1+pxPerDay)}px;" title="${a.type||''} ${fmtDate(a.start)}~${fmtDate(a.end)} 价格${a.price||''}">${a.type||''} ${fmtDate(a.start)}</div>`;
+      let ctrlBar = '';
+      if(a.controlUntil && a.controlUntil > a.end){
+        const cx1 = xFor(addDays(a.end,1)), cx2 = xFor(a.controlUntil);
+        ctrlBar = `<div class="tl-control" style="left:${cx1}px; width:${Math.max(4,cx2-cx1+pxPerDay)}px;" title="控价至 ${fmtDate(a.controlUntil)}，可再提报 ${fmtDate(a.nextEligible)}"></div>`;
+      }
+      return dealBar+ctrlBar;
+    }).join('');
+    return `<div class="tl-group">
+      <div class="tl-label"><b>${key}</b></div>
+      <div class="tl-row" style="width:${totalWidth}px;">${bars}</div>
+      <div class="tl-axis" style="width:${totalWidth}px;"><span>${fmtDate(minDate)}</span><span>${fmtDate(maxDate)}</span></div>
+    </div>`;
+  }).join('');
+}
+
+/* ============== main recompute ============== */
+function recompute(){
+  computeAll();
+  renderSiteRuleTable();
+  renderTable();
+  renderDiagAndConflicts();
+  renderTimeline();
+}
+
+/* ============== row add / import / export ============== */
+document.getElementById('addRowBtn').addEventListener('click', async ()=>{
+  const blank = {site:'US', sku:'', type:'秒杀 Lightning Deal', startStr:'', endStr:'', price:'', refPrice:'', note:''};
+  if(CLOUD_ON){
+    suppressRealtimeReload = true;
+    const newId = await cloudInsert(blank);
+    suppressRealtimeReload = false;
+    if(newId===null) return; // insert failed, error already shown
+    ACTIVITIES.push({id:newId, ...blank});
+  } else {
+    ACTIVITIES.push({id:uidCounter++, ...blank});
+  }
+  recompute();
+});
+document.getElementById('clearBtn').addEventListener('click', async ()=>{
+  if(ACTIVITIES.length && !confirm('确定清空全部已录入的活动吗？'+(CLOUD_ON?'（会同步清空云端共享数据，所有人都会看到清空后的结果）':''))) return;
+  if(CLOUD_ON){
+    suppressRealtimeReload = true;
+    const ids = ACTIVITIES.map(a=>a.id);
+    if(ids.length) await sb.from('deal_activities').delete().in('id', ids);
+    suppressRealtimeReload = false;
+  }
+  ACTIVITIES = [];
+  recompute();
+});
+
+const IMPORT_FIELD_CANDIDATES = {
+  site:['站点','marketplace','site','国家'],
+  sku:['sku','asin','SKU','ASIN'],
+  type:['活动类型','类型','type','dealtype'],
+  startStr:['开始日期','start date','startdate','开始时间'],
+  endStr:['结束日期','end date','enddate','结束时间'],
+  price:['活动价','秒杀价','dealprice','price'],
+  refPrice:['参考价','原价','日常价','refprice','listprice'],
+  note:['备注','note','remark']
+};
+function normHeader(s){ return String(s||'').toLowerCase().replace(/[\s_\-#（）()]/g,''); }
+function autoMapImport(headers){
+  const normalized = headers.map(h=>({raw:h,n:normHeader(h)}));
+  const map = {};
+  Object.keys(IMPORT_FIELD_CANDIDATES).forEach(k=>{
+    const cands = IMPORT_FIELD_CANDIDATES[k];
+    let found = normalized.find(h=>cands.some(c=>h.n===normHeader(c)));
+    if(!found) found = normalized.find(h=>cands.some(c=>h.n.includes(normHeader(c))));
+    map[k] = found ? found.raw : '';
+  });
+  return map;
+}
+function toDateStr(v){
+  if(v===undefined||v===null||v==='') return '';
+  if(typeof v==='number'){ // excel serial date
+    const d = XLSX.SSF.parse_date_code(v);
+    if(d) return d.y+'-'+String(d.m).padStart(2,'0')+'-'+String(d.d).padStart(2,'0');
+  }
+  const s = String(v).trim();
+  const m = s.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if(m) return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+  return '';
+}
+
+document.getElementById('importBtn').addEventListener('click', ()=> document.getElementById('importInput').click());
+document.getElementById('importInput').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const status = document.getElementById('importStatus');
+  status.textContent = '解析中…';
+  const isCsv = /\.csv$/i.test(file.name);
+  async function ingest(rows, headers){
+    const map = autoMapImport(headers);
+    const newRows = [];
+    rows.forEach(r=>{
+      const site = map.site ? String(r[map.site]||'').trim() : '';
+      const sku = map.sku ? String(r[map.sku]||'').trim() : '';
+      if(!site && !sku) return;
+      newRows.push({
+        site, sku,
+        type: map.type ? String(r[map.type]||'秒杀 Lightning Deal').trim() : '秒杀 Lightning Deal',
+        startStr: map.startStr ? toDateStr(r[map.startStr]) : '',
+        endStr: map.endStr ? toDateStr(r[map.endStr]) : '',
+        price: map.price ? r[map.price] : '',
+        refPrice: map.refPrice ? r[map.refPrice] : '',
+        note: map.note ? String(r[map.note]||'') : ''
+      });
+    });
+    if(CLOUD_ON){
+      suppressRealtimeReload = true;
+      await cloudInsertMany(newRows);
+      suppressRealtimeReload = false;
+      await reloadFromCloud();
+    } else {
+      newRows.forEach(r=> ACTIVITIES.push({id:uidCounter++, ...r}));
+      recompute();
+    }
+    status.textContent = `已导入 ${newRows.length} 条`;
+  }
+  if(isCsv){
+    Papa.parse(file, {header:true, skipEmptyLines:true, encoding:'UTF-8', complete:res=> ingest(res.data, res.meta.fields||[]), error:err=> status.textContent='解析失败：'+err.message});
+  } else {
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      try{
+        const wb = XLSX.read(ev.target.result, {type:'array'});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(ws, {defval:''});
+        ingest(json, json.length?Object.keys(json[0]):[]);
+      }catch(err){ status.textContent = '解析失败：'+err.message; }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  e.target.value = '';
+});
+
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  if(ACTIVITIES.length===0) return;
+  const header = ['站点','SKU/ASIN','活动类型','开始日期','结束日期','活动价','参考价','时长(天)','状态','控价至','可再提报(不叠加)','90天占比风险','备注'].join(',');
+  function esc(v){ v=v===undefined||v===null?'':String(v); if(v.includes(',')||v.includes('"')) v='"'+v.replace(/"/g,'""')+'"'; return v; }
+  const lines = ACTIVITIES.map(a=>[
+    esc(a.site), esc(a.sku), esc(a.type), esc(a.startStr), esc(a.endStr), esc(a.price), esc(a.refPrice),
+    a.duration||'', esc(a.status), a.controlUntil?fmtDate(a.controlUntil):'', a.nextEligible?fmtDate(a.nextEligible):'',
+    a.risk90 ? (a.risk90.triggered?`触发(${a.risk90.sumAtEnd}/${a.risk90.thresholdDays}天)`:`安全(${a.risk90.sumAtEnd}/${a.risk90.thresholdDays}天)`) : '',
+    esc(a.note)
+  ].join(','));
+  const csv = '\uFEFF'+header+'\n'+lines.join('\n');
+  const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='秒杀排期_控价计划.csv'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* init */
+(async function init(){
+  if(!CLOUD_ON){
+    setCloudStatus('本地模式（未配置云端，数据只存在本机）', 'muted');
+    recompute();
+    return;
+  }
+  setCloudStatus('连接云端中…', 'muted');
+  const rows = await cloudLoadAll();
+  if(rows){
+    ACTIVITIES = rows;
+    setCloudStatus('云端已连接 · 多人共享中', 'ok');
+  } else {
+    setCloudStatus('云端连接失败，暂时以本地模式运行', 'danger');
+  }
+  recompute();
+  subscribeRealtime();
+})();
+</script>
+</body>
+</html>
