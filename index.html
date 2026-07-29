@@ -234,7 +234,7 @@ function today(){ const n=new Date(); return new Date(Date.UTC(n.getFullYear(), 
    2. SUPABASE_ANON_KEY：anon public 那一串
    没配置之前（还是下面的占位符），工具照常可用，但只在你自己浏览器里保存数据，不联网、不共享。
 */
-const SUPABASE_URL = 'https://junezhou1128-debug.github.io/AMOS-Deal-tracker/';
+const SUPABASE_URL = 'https://bzdnbqzynmuzuujwyqse.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_7G5s0PF08oUUx2il0J1EkQ_KLnEKuft';
 const CLOUD_ON = SUPABASE_URL.startsWith('https://') && SUPABASE_ANON_KEY.length>20;
 const sb = CLOUD_ON ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
