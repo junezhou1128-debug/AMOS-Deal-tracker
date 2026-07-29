@@ -239,8 +239,8 @@ const TYPE_COLOR = {
 /* ============== Supabase cloud sync ==============
    把下面两行换成你自己 Supabase 项目的值：SUPABASE_URL（不带 /rest/v1/）和 anon/publishable key。
 */
-const SUPABASE_URL = 'https://bzdnbqzynmuzuujwyqse.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_7G5s0PF08oUUx2il0J1EkQ_KLnEKuft';
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
 const CLOUD_ON = SUPABASE_URL.startsWith('https://') && SUPABASE_ANON_KEY.length>20;
 const sb = CLOUD_ON ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = 'deal_activities_v2';
@@ -380,7 +380,10 @@ function computeAll(){
 
   Object.values(GROUPS).forEach(g=>{
     const valid = g.activities.filter(a=>a.start && a.end);
-    if(valid.length===0){ g.refPrice=null; return; }
+    if(valid.length===0){
+      g.refPrice=null; g.promo90Today=0; g.thr90=null; g.statusToday='—'; g.controlUntil=null; g.nextEligible=null;
+      return;
+    }
     // latest ref price by start date
     const sorted = [...valid].sort((x,y)=>x.start-y.start);
     const refPrice = parseFloat(sorted[sorted.length-1].refPrice) || 0;
@@ -529,12 +532,17 @@ function renderGrouped(){
 
   const bySite = {};
   Object.values(GROUPS).forEach(g=>{
+    if(!g.asin) return; // skip draft rows that don't have an ASIN filled in yet
     const site = g.site||'—';
     if(!bySite[site]) bySite[site]=[];
     bySite[site].push(g);
   });
 
   const wrap = document.getElementById('siteGroupsWrap');
+  if(Object.keys(bySite).length===0){
+    wrap.innerHTML = `<p class="sub-desc" style="margin:0;">还没有填完整的活动（至少需要填 ASIN + 开始/结束日期），填好后会自动出现在这里。</p>`;
+    return;
+  }
   wrap.innerHTML = Object.keys(bySite).sort().map(site=>{
     const groups = bySite[site];
     const collapsed = collapsedSites[site];
